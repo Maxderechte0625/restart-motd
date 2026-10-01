@@ -1,97 +1,16 @@
 [package]
-name = "lazymc"
-version = "0.2.11"
-authors = ["Tim Visee <3a4fb3964f@sinenomine.email>"]
+name = "restart-motd"
+version = "1.0.0"
 license = "GPL-3.0"
-readme = "README.md"
-homepage = "https://timvisee.com/projects/lazymc"
-repository = "https://gitlab.com/timvisee/lazymc"
-description = "Put your Minecraft server to rest when idle."
-keywords = ["minecraft", "server", "idle", "cli"]
-categories = ["command-line-interface", "games"]
-exclude = ["/.github", "/contrib"]
+description = "Shows a 'server is restarting' MOTD while the Minecraft server is down."
 edition = "2021"
-rust-version = "1.74.0"
 
 [profile.release]
-codegen-units = 1
 lto = true
 strip = true
 
-[features]
-default = ["rcon", "lobby"]
-
-# RCON support
-# Allow use of RCON to manage (stop) server.
-# Required on Windows.
-rcon = ["rust_rcon"]
-
-# Lobby support
-# Add lobby join method, keeps client in fake lobby world until server is ready.
-lobby = ["md-5", "uuid"]
-
 [dependencies]
-anyhow = "1.0"
-base64 = "0.22"
-bytes = "1.1"
-chrono = "0.4"
-clap = { version = "4.0.32", default-features = false, features = [
-    "std",
-    "help",
-    "suggestions",
-    "color",
-    "usage",
-    "cargo",
-    "env",
-    "unicode",
-] }
-colored = "2.0"
-derive_builder = "0.20"
-dotenv = "0.15"
-flate2 = { version = "1.0", default-features = false, features = ["default"] }
-futures = { version = "0.3", default-features = false, features = ["executor"] }
-log = "0.4"
-minecraft-protocol = { git = "https://github.com/timvisee/rust-minecraft-protocol", rev = "4f93bb3" }
-named-binary-tag = "0.6"
-nix = { version = "0.28", features = ["process", "signal"] }
-notify = "4.0"
-pretty_env_logger = "0.5"
-proxy-protocol = "0.5"
-quartz_nbt = "0.2"
-rand = "0.8"
-serde = "1.0"
-serde_json = "1.0"
-shlex = "1.1"
-thiserror = "1.0"
-tokio = { version = "1", default-features = false, features = [
-    "rt-multi-thread",
-    "io-util",
-    "net",
-    "macros",
-    "time",
-    "process",
-    "signal",
-    "sync",
-    "fs",
-] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", default-features = false, features = ["rt", "macros", "net", "io-util", "time"] }
 toml = "0.8"
-version-compare = "0.2"
-
-# Feature: rcon
-rust_rcon = { package = "rcon", version = "0.6", default-features = false, features = ["rt-tokio"], optional = true }
-
-# Feature: lobby
-md-5 = { version = "0.10", optional = true }
-uuid = { version = "1.7", optional = true, features = ["v3"] }
-
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
-
-[target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = [
-    "winuser",
-    "processthreadsapi",
-    "handleapi",
-    "ntdef",
-    "minwindef",
-] }

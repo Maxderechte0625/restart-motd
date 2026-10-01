@@ -1,0 +1,15 @@
+# Adresse, auf der dieses Tool lauscht (die oeffentliche Server-Adresse)
+listen = "0.0.0.0:25565"
+
+# Adresse des echten Minecraft-Servers (server-port in server.properties)
+server = "127.0.0.1:25566"
+
+# Echte Spieler-IP per PROXY-Protokoll v2 an den Server weitergeben
+proxy_protocol = false
+
+# MOTD waehrend des Neustarts. Unterstuetzt &-Codes, &x&R&R&G&G&B&B und <##RRGGBB>
+motd_line_1 = "&x&F&A&E&2&0&5&lLEMON&f&lMC&7&l.DE &r<##a9a9a9>• &x&F&A&E&2&0&5&lC&x&F&A&D&7&0&5&lI&x&F&A&C&B&0&5&lT&x&F&A&C&0&0&5&lY&x&F&A&B&4&0&5&lB&x&F&A&A&9&0&5&lU&x&F&A&9&D&0&5&lI&x&F&A&9&2&0&5&lL&x&F&A&8&6&0&5&lD &r<##a9a9a9>(<##e9e487>1.21.11 - 26.3&r<##a9a9a9>)"
+motd_line_2 = "                    &c&lDer Server wird neu gestartet"
+
+# Text, den Spieler beim Versuch zu joinen sehen
+kick_message = "&cDer Server wird gerade neu gestartet.\n&7Bitte versuche es in einer Minute erneut."

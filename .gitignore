@@ -1,7 +1,2 @@
-.env
-/lazymc.toml
 /target
-
-# Test server
-/mcserver
-/bettermc
+/restart-motd.toml
