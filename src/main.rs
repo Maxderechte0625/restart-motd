@@ -2,7 +2,12 @@
 //! are passed straight through. While it is down (e.g. nightly restart), pings
 //! get a "server is restarting" MOTD and joins get a friendly kick message.
 
-use std::{io, net::SocketAddr, time::Duration};
+use std::{
+    io,
+    net::SocketAddr,
+    sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
+};
 
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -11,6 +16,9 @@ use tokio::{
     net::{TcpListener, TcpStream},
     time::timeout,
 };
+
+/// True once the real server answers a status ping (i.e. it is really ready).
+static SERVER_READY: AtomicBool = AtomicBool::new(false);
 
 #[derive(Deserialize)]
 #[serde(default)]
@@ -40,7 +48,9 @@ impl Default for Config {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> io::Result<()> {
-    let path = std::env::args().nth(1).unwrap_or("restart-motd.toml".into());
+    let path = std::env::args()
+        .nth(1)
+        .unwrap_or("restart-motd.toml".into());
     let config: Config = match std::fs::read_to_string(&path) {
         Ok(text) => toml::from_str(&text).map_err(io::Error::other)?,
         Err(_) => Config::default(),
@@ -50,12 +60,18 @@ async fn main() -> io::Result<()> {
     let motd = to_component(&motd);
     let kick = to_component(&config.kick_message);
     // Optional 64x64 PNG; no file means no icon
-    let icon = std::fs::read(&config.icon).ok().map(|png| format!("data:image/png;base64,{}", base64(&png)));
+    let icon = std::fs::read(&config.icon)
+        .ok()
+        .map(|png| format!("data:image/png;base64,{}", base64(&png)));
 
     let listener = TcpListener::bind(&config.listen).await?;
-    println!("Listening on {}, forwarding to {}", config.listen, config.server);
+    println!(
+        "Listening on {}, forwarding to {}",
+        config.listen, config.server
+    );
 
     let config: &'static Config = Box::leak(Box::new(config));
+    tokio::spawn(watch_server(config));
     loop {
         let (client, addr) = listener.accept().await?;
         let (motd, kick, icon) = (motd.clone(), kick.clone(), icon.clone());
@@ -65,21 +81,39 @@ async fn main() -> io::Result<()> {
     }
 }
 
-async fn handle(mut client: TcpStream, addr: SocketAddr, config: &Config, motd: Value, kick: Value, icon: Option<String>) -> io::Result<()> {
-    // Server up? Just pipe everything through.
-    if let Ok(Ok(mut server)) = timeout(Duration::from_secs(2), TcpStream::connect(&config.server)).await {
-        if config.proxy_protocol {
-            server.write_all(&proxy_header(addr, client.local_addr()?)).await?;
+async fn handle(
+    mut client: TcpStream,
+    addr: SocketAddr,
+    config: &Config,
+    motd: Value,
+    kick: Value,
+    icon: Option<String>,
+) -> io::Result<()> {
+    // Server really ready? Just pipe everything through.
+    if SERVER_READY.load(Ordering::Relaxed) {
+        if let Ok(Ok(mut server)) =
+            timeout(Duration::from_secs(2), TcpStream::connect(&config.server)).await
+        {
+            if config.proxy_protocol {
+                server
+                    .write_all(&proxy_header(addr, client.local_addr()?))
+                    .await?;
+            }
+            copy_bidirectional(&mut client, &mut server).await?;
+            return Ok(());
         }
-        copy_bidirectional(&mut client, &mut server).await?;
-        return Ok(());
     }
 
-    // Server down: answer the Minecraft handshake ourselves.
+    // Server down or still starting: answer the Minecraft handshake ourselves.
     timeout(Duration::from_secs(10), offline(client, motd, kick, icon)).await?
 }
 
-async fn offline(mut c: TcpStream, motd: Value, kick: Value, icon: Option<String>) -> io::Result<()> {
+async fn offline(
+    mut c: TcpStream,
+    motd: Value,
+    kick: Value,
+    icon: Option<String>,
+) -> io::Result<()> {
     // Handshake: id, protocol, address, port, next state
     let packet = read_packet(&mut c).await?;
     let mut p = &packet[..];
@@ -112,6 +146,51 @@ async fn offline(mut c: TcpStream, motd: Value, kick: Value, icon: Option<String
     } else {
         // Login: disconnect with message
         send(&mut c, 0, kick.to_string().as_bytes()).await
+    }
+}
+
+/// Pings the real server once a second. The port can be open long before the
+/// server is joinable, so only a real status response counts as "ready".
+async fn watch_server(config: &Config) {
+    loop {
+        let ready = matches!(
+            timeout(Duration::from_secs(2), ping(config)).await,
+            Ok(Ok(()))
+        );
+        SERVER_READY.store(ready, Ordering::Relaxed);
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+}
+
+async fn ping(config: &Config) -> io::Result<()> {
+    let mut s = TcpStream::connect(&config.server).await?;
+    if config.proxy_protocol {
+        s.write_all(&proxy_header(s.local_addr()?, s.peer_addr()?))
+            .await?;
+    }
+    // Handshake (status) + status request
+    let mut handshake = vec![0];
+    write_varint(&mut handshake, 767);
+    write_varint(&mut handshake, 9);
+    handshake.extend_from_slice(b"localhost");
+    handshake.extend_from_slice(&25565u16.to_be_bytes());
+    handshake.push(1);
+    send_raw(&mut s, &handshake).await?;
+    send_raw(&mut s, &[0]).await?;
+
+    // Response is a packet starting with its length, then id 0
+    let mut len = 0;
+    for i in 0..3 {
+        let byte = s.read_u8().await?;
+        len |= ((byte & 0x7f) as usize) << (7 * i);
+        if byte & 0x80 == 0 {
+            break;
+        }
+    }
+    if len > 0 && s.read_u8().await? == 0 {
+        Ok(())
+    } else {
+        Err(bad())
     }
 }
 
@@ -227,7 +306,11 @@ fn to_component(text: &str) -> Value {
     while i < chars.len() {
         let rest: String = chars[i..].iter().take(10).collect();
         // <##RRGGBB>
-        if let Some(hex) = rest.strip_prefix("<##").and_then(|r| r.get(..6)).filter(|h| is_hex(h)) {
+        if let Some(hex) = rest
+            .strip_prefix("<##")
+            .and_then(|r| r.get(..6))
+            .filter(|h| is_hex(h))
+        {
             flush(&mut buf, &color, bold, italic);
             color = Some(format!("#{hex}"));
             i += 10;
@@ -303,9 +386,16 @@ fn base64(data: &[u8]) -> String {
     const ABC: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::new();
     for chunk in data.chunks(3) {
-        let n = chunk.iter().enumerate().fold(0u32, |n, (i, b)| n | (*b as u32) << (16 - 8 * i));
+        let n = chunk
+            .iter()
+            .enumerate()
+            .fold(0u32, |n, (i, b)| n | (*b as u32) << (16 - 8 * i));
         for i in 0..4 {
-            out.push(if i <= chunk.len() { ABC[(n >> (18 - 6 * i) & 63) as usize] as char } else { '=' });
+            out.push(if i <= chunk.len() {
+                ABC[(n >> (18 - 6 * i) & 63) as usize] as char
+            } else {
+                '='
+            });
         }
     }
     out
