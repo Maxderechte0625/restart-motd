@@ -17,6 +17,9 @@ seine normale MOTD). Das Tool startet oder stoppt den Server **nie**.
    MOTD-Texte). Ohne Datei gelten die Standardwerte.
 4. Starten: `./restart-motd` (optional mit Pfad zur Config als Argument).
 
+Das Server-Icon (64x64 PNG) liegt als `server-icon.png` neben dem Tool (Pfad per
+`icon` in der Config aenderbar) und wird waehrend des Neustarts angezeigt.
+
 Die echte Spieler-IP wird standardmaessig per PROXY-Protocol v2 an den Server
 weitergegeben (`proxy_protocol = true`). Dafuer muss der Server es aktiviert
 haben (z. B. Paper: `proxy-protocol: true` in `paper-global.yml`; bei

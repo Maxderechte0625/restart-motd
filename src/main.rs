@@ -18,6 +18,7 @@ struct Config {
     listen: String,
     server: String,
     proxy_protocol: bool,
+    icon: String,
     motd_line_1: String,
     motd_line_2: String,
     kick_message: String,
@@ -29,6 +30,7 @@ impl Default for Config {
             listen: "0.0.0.0:25565".into(),
             server: "127.0.0.1:25566".into(),
             proxy_protocol: true,
+            icon: "server-icon.png".into(),
             motd_line_1: "&x&F&A&E&2&0&5&lLEMON&f&lMC&7&l.DE &r<##a9a9a9>• &x&F&A&E&2&0&5&lC&x&F&A&D&7&0&5&lI&x&F&A&C&B&0&5&lT&x&F&A&C&0&0&5&lY&x&F&A&B&4&0&5&lB&x&F&A&A&9&0&5&lU&x&F&A&9&D&0&5&lI&x&F&A&9&2&0&5&lL&x&F&A&8&6&0&5&lD &r<##a9a9a9>(<##e9e487>1.21.11 - 26.3&r<##a9a9a9>)".into(),
             motd_line_2: "                    &c&lDer Server wird neu gestartet".into(),
             kick_message: "&cDer Server wird gerade neu gestartet.\n&7Bitte versuche es in einer Minute erneut.".into(),
@@ -47,6 +49,8 @@ async fn main() -> io::Result<()> {
     let motd = format!("{}\n{}", config.motd_line_1, config.motd_line_2);
     let motd = to_component(&motd);
     let kick = to_component(&config.kick_message);
+    // Optional 64x64 PNG; no file means no icon
+    let icon = std::fs::read(&config.icon).ok().map(|png| format!("data:image/png;base64,{}", base64(&png)));
 
     let listener = TcpListener::bind(&config.listen).await?;
     println!("Listening on {}, forwarding to {}", config.listen, config.server);
@@ -54,14 +58,14 @@ async fn main() -> io::Result<()> {
     let config: &'static Config = Box::leak(Box::new(config));
     loop {
         let (client, addr) = listener.accept().await?;
-        let (motd, kick) = (motd.clone(), kick.clone());
+        let (motd, kick, icon) = (motd.clone(), kick.clone(), icon.clone());
         tokio::spawn(async move {
-            let _ = handle(client, addr, config, motd, kick).await;
+            let _ = handle(client, addr, config, motd, kick, icon).await;
         });
     }
 }
 
-async fn handle(mut client: TcpStream, addr: SocketAddr, config: &Config, motd: Value, kick: Value) -> io::Result<()> {
+async fn handle(mut client: TcpStream, addr: SocketAddr, config: &Config, motd: Value, kick: Value, icon: Option<String>) -> io::Result<()> {
     // Server up? Just pipe everything through.
     if let Ok(Ok(mut server)) = timeout(Duration::from_secs(2), TcpStream::connect(&config.server)).await {
         if config.proxy_protocol {
@@ -72,10 +76,10 @@ async fn handle(mut client: TcpStream, addr: SocketAddr, config: &Config, motd: 
     }
 
     // Server down: answer the Minecraft handshake ourselves.
-    timeout(Duration::from_secs(10), offline(client, motd, kick)).await?
+    timeout(Duration::from_secs(10), offline(client, motd, kick, icon)).await?
 }
 
-async fn offline(mut c: TcpStream, motd: Value, kick: Value) -> io::Result<()> {
+async fn offline(mut c: TcpStream, motd: Value, kick: Value, icon: Option<String>) -> io::Result<()> {
     // Handshake: id, protocol, address, port, next state
     let packet = read_packet(&mut c).await?;
     let mut p = &packet[..];
@@ -90,11 +94,14 @@ async fn offline(mut c: TcpStream, motd: Value, kick: Value) -> io::Result<()> {
             match packet.first() {
                 // Status request
                 Some(0) => {
-                    let status = json!({
+                    let mut status = json!({
                         "version": { "name": "Neustart", "protocol": protocol },
                         "players": { "max": 0, "online": 0 },
                         "description": motd,
                     });
+                    if let Some(icon) = &icon {
+                        status["favicon"] = json!(icon);
+                    }
                     send(&mut c, 0, status.to_string().as_bytes()).await?;
                 }
                 // Ping: echo payload back, then done
@@ -290,4 +297,16 @@ fn color_name(code: char) -> Option<&'static str> {
         'f' => "white",
         _ => return None,
     })
+}
+
+fn base64(data: &[u8]) -> String {
+    const ABC: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for chunk in data.chunks(3) {
+        let n = chunk.iter().enumerate().fold(0u32, |n, (i, b)| n | (*b as u32) << (16 - 8 * i));
+        for i in 0..4 {
+            out.push(if i <= chunk.len() { ABC[(n >> (18 - 6 * i) & 63) as usize] as char } else { '=' });
+        }
+    }
+    out
 }
