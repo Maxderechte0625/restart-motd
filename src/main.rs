@@ -28,7 +28,7 @@ impl Default for Config {
         Self {
             listen: "0.0.0.0:25565".into(),
             server: "127.0.0.1:25566".into(),
-            proxy_protocol: false,
+            proxy_protocol: true,
             motd_line_1: "&x&F&A&E&2&0&5&lLEMON&f&lMC&7&l.DE &r<##a9a9a9>• &x&F&A&E&2&0&5&lC&x&F&A&D&7&0&5&lI&x&F&A&C&B&0&5&lT&x&F&A&C&0&0&5&lY&x&F&A&B&4&0&5&lB&x&F&A&A&9&0&5&lU&x&F&A&9&D&0&5&lI&x&F&A&9&2&0&5&lL&x&F&A&8&6&0&5&lD &r<##a9a9a9>(<##e9e487>1.21.11 - 26.3&r<##a9a9a9>)".into(),
             motd_line_2: "                    &c&lDer Server wird neu gestartet".into(),
             kick_message: "&cDer Server wird gerade neu gestartet.\n&7Bitte versuche es in einer Minute erneut.".into(),

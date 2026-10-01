@@ -17,5 +17,8 @@ seine normale MOTD). Das Tool startet oder stoppt den Server **nie**.
    MOTD-Texte). Ohne Datei gelten die Standardwerte.
 4. Starten: `./restart-motd` (optional mit Pfad zur Config als Argument).
 
-Nutzt dein Server die echte Spieler-IP (Bans, Logs), `proxy_protocol = true`
-setzen und auf dem Server PROXY-Protocol aktivieren.
+Die echte Spieler-IP wird standardmaessig per PROXY-Protocol v2 an den Server
+weitergegeben (`proxy_protocol = true`). Dafuer muss der Server es aktiviert
+haben (z. B. Paper: `proxy-protocol: true` in `paper-global.yml`; bei
+Velocity/Bungee entsprechend). Ohne Unterstuetzung auf dem Server mit
+`proxy_protocol = false` abschalten.
